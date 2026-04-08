@@ -113,6 +113,7 @@ def _cmd_status(args: argparse.Namespace) -> None:
     if resp.get("ok"):
         state = "paused" if resp.get("paused") else "recording"
         print(f"echobuf daemon is running ({state})")
+        print(f"  Backend: {resp.get('backend', 'unknown')}")
         print(f"  Source: {resp.get('source', 'system')}")
         print(f"  Buffer: {resp['buffered']}s / {resp['buffer_seconds']}s")
         print(f"  Format: {resp['sample_rate']}Hz, {resp['channels']}ch")

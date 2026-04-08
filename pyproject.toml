@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "echobuf"
-version = "0.3.0"
+version = "0.4.0"
 description = "Audio instant-replay buffer for Linux"
 requires-python = ">=3.11"
 dependencies = [
@@ -15,6 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 tray = ["pystray>=0.19", "Pillow>=10.0", "PyGObject>=3.42"]
+hotkey = ["pynput>=1.7"]
 
 [project.scripts]
 echobuf = "echobuf.cli:main"

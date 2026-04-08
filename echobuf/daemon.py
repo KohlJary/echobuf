@@ -11,12 +11,12 @@ from pathlib import Path
 
 import soundfile as sf
 
-from .backend import AudioFormat, PulseBackend
+from .backend import AudioFormat, PulseBackend, PipeWireBackend, create_backend
 from .config import Config
 from .ipc import IPCServer
 from .notify import notify_save
 from .ringbuffer import RingBuffer
-from .sources import PerAppCapture
+from .sources import PulsePerAppCapture, PipeWirePerAppCapture, list_sources
 from .template import render_template
 
 log = logging.getLogger(__name__)
@@ -36,14 +36,19 @@ class Daemon:
             config.capture.sample_rate,
             config.capture.channels,
         )
-        self.backend = PulseBackend()
+        self._backend_name = config.capture.backend
+        self.backend = create_backend(self._backend_name)
+        # Resolve "auto" to actual backend name for later decisions
+        self._backend_name = "pipewire" if isinstance(self.backend, PipeWireBackend) else "pulse"
+
         self.output_dir = config.output.directory_path
         self._running = False
         self._paused = False
         self._capture_thread: threading.Thread | None = None
         self._ipc: IPCServer | None = None
         self._save_counter = 0
-        self._per_app: PerAppCapture | None = None
+        self._per_app: PulsePerAppCapture | PipeWirePerAppCapture | None = None
+        self._hotkey = None
         self._active_source = config.capture.source
 
     def start(self) -> None:
@@ -66,12 +71,17 @@ class Daemon:
         self._ipc = IPCServer(self)
         self._ipc.start()
 
+        # Start hotkey handler if configured
+        if self.config.hotkey.binding:
+            self._start_hotkey()
+
         # Start capture thread
         self._capture_thread = threading.Thread(target=self._capture_loop, daemon=True)
         self._capture_thread.start()
 
         log.info(
-            "echobuf daemon running — buffer=%.0fs, rate=%dHz, channels=%d, source=%s, output=%s",
+            "echobuf daemon running — backend=%s, buffer=%.0fs, rate=%dHz, channels=%d, source=%s, output=%s",
+            self._backend_name,
             self.config.buffer.seconds,
             self.fmt.sample_rate,
             self.fmt.channels,
@@ -86,11 +96,25 @@ class Daemon:
         finally:
             self._shutdown()
 
+    def _start_hotkey(self) -> None:
+        """Start the optional hotkey handler."""
+        try:
+            from .hotkey import HotkeyHandler
+            self._hotkey = HotkeyHandler(self.config.hotkey.binding)
+            self._hotkey.start()
+        except (ImportError, RuntimeError) as e:
+            log.warning("Could not start hotkey handler: %s", e)
+
     def _setup_per_app(self, app_name: str) -> None:
-        """Set up per-app capture routing and open the backend on the monitor source."""
-        self._per_app = PerAppCapture()
-        monitor_source = self._per_app.setup(app_name)
-        self.backend.open(self.fmt, device=monitor_source)
+        """Set up per-app capture routing and open the backend on the capture source."""
+        if self._backend_name == "pipewire":
+            self._per_app = PipeWirePerAppCapture()
+            target = self._per_app.setup(app_name)
+            self.backend.open(self.fmt, device=target)
+        else:
+            self._per_app = PulsePerAppCapture()
+            monitor = self._per_app.setup(app_name)
+            self.backend.open(self.fmt, device=monitor)
 
     def _capture_loop(self) -> None:
         """Read audio from the backend and feed the ring buffer."""
@@ -131,7 +155,6 @@ class Daemon:
         sf.write(str(out_path), audio, self.fmt.sample_rate, subtype="PCM_16")
         log.info("Saved %.1fs of audio to %s", duration, out_path)
 
-        # Send desktop notification
         if self.config.notifications.enabled:
             notify_save(out_path, duration)
 
@@ -153,15 +176,12 @@ class Daemon:
         """Switch capture source at runtime."""
         log.info("Switching source from %s to %s", self._active_source, source_spec)
 
-        # Tear down existing per-app capture if active
         if self._per_app is not None:
             self._per_app.teardown()
             self._per_app = None
 
-        # Close existing backend
         self.backend.close()
 
-        # Clear the ring buffer
         self.ring = RingBuffer(
             self.config.buffer.seconds,
             self.fmt.sample_rate,
@@ -183,6 +203,8 @@ class Daemon:
 
     def _shutdown(self) -> None:
         self._running = False
+        if self._hotkey is not None:
+            self._hotkey.stop()
         if self._ipc is not None:
             self._ipc.stop()
         if self._per_app is not None:

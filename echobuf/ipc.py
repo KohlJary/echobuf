@@ -110,6 +110,7 @@ class IPCServer:
                 "ok": True,
                 "running": True,
                 "paused": self._daemon.paused,
+                "backend": self._daemon._backend_name,
                 "source": self._daemon._active_source,
                 "buffer_seconds": self._daemon.ring.capacity / self._daemon.fmt.sample_rate,
                 "buffered": round(self._daemon.ring.duration, 1),
@@ -120,9 +121,8 @@ class IPCServer:
             }
 
         elif cmd == "list_sources":
-            from .sources import PerAppCapture
-            pac = PerAppCapture()
-            sources = pac.list_sources()
+            from .sources import list_sources
+            sources = list_sources()
             return {
                 "ok": True,
                 "sources": [
