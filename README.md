@@ -4,6 +4,14 @@ Audio instant-replay buffer for Linux. Continuously records system audio into a 
 
 ## Install
 
+**Arch Linux (AUR):**
+
+```bash
+yay -S echobuf
+```
+
+**PyPI:**
+
 ```bash
 pip install echobuf
 ```
