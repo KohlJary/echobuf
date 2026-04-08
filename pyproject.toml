@@ -7,7 +7,7 @@ name = "echobuf"
 version = "0.4.0"
 description = "Audio instant-replay buffer for Linux"
 readme = "README.md"
-license = {text = "MIT"}
+license = {file = "LICENSE"}
 requires-python = ">=3.11"
 classifiers = [
     "Development Status :: 3 - Alpha",
