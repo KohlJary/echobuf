@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68.0", "setuptools-scm>=8.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "echobuf"
+version = "0.1.0"
+description = "Audio instant-replay buffer for Linux"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.24",
+    "soundfile>=0.12",
+    "pulsectl>=23.5",
+]
+
+[project.scripts]
+echobuf = "echobuf.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["echobuf*"]
