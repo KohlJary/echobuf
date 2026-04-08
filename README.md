@@ -187,6 +187,10 @@ The tray icon should be started separately via your desktop environment's autost
 - **IPC**: Unix socket at `$XDG_RUNTIME_DIR/echobuf.sock`, line-delimited JSON
 - **Output**: 16-bit PCM WAV via libsndfile
 
+## Disclaimer
+
+echobuf captures audio output from your system. You are solely responsible for ensuring your use complies with all applicable copyright, intellectual property, and recording laws in your jurisdiction. This tool is intended for capturing your own audio, personal sampling, and other lawful purposes.
+
 ## License
 
 MIT
