@@ -1,0 +1,13 @@
+[Unit]
+Description=echobuf audio replay buffer
+After=pipewire.service pulseaudio.service
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/echobuf daemon
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

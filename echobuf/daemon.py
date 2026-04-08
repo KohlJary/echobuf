@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import signal
 import threading
 import time
@@ -13,59 +12,61 @@ from pathlib import Path
 import soundfile as sf
 
 from .backend import AudioFormat, PulseBackend
+from .config import Config
+from .ipc import IPCServer
 from .ringbuffer import RingBuffer
+from .template import render_template
 
 log = logging.getLogger(__name__)
-
-# Default output directory for v0.1
-DEFAULT_OUTPUT_DIR = Path.home() / "samples"
 
 
 class Daemon:
     """Core daemon: runs the capture loop and handles save triggers."""
 
-    def __init__(
-        self,
-        buffer_seconds: float = 10.0,
-        sample_rate: int = 48000,
-        channels: int = 2,
-        output_dir: Path = DEFAULT_OUTPUT_DIR,
-    ) -> None:
-        self.fmt = AudioFormat(sample_rate=sample_rate, channels=channels)
-        self.ring = RingBuffer(buffer_seconds, sample_rate, channels)
+    def __init__(self, config: Config) -> None:
+        self.config = config
+        self.fmt = AudioFormat(
+            sample_rate=config.capture.sample_rate,
+            channels=config.capture.channels,
+        )
+        self.ring = RingBuffer(
+            config.buffer.seconds,
+            config.capture.sample_rate,
+            config.capture.channels,
+        )
         self.backend = PulseBackend()
-        self.output_dir = output_dir
+        self.output_dir = config.output.directory_path
         self._running = False
         self._capture_thread: threading.Thread | None = None
+        self._ipc: IPCServer | None = None
         self._save_counter = 0
 
     def start(self) -> None:
-        """Start capture and block until stopped."""
+        """Start capture, IPC server, and block until stopped."""
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.backend.open(self.fmt)
         self._running = True
 
-        # Register SIGUSR1 as save trigger, SIGINT/SIGTERM for shutdown
-        signal.signal(signal.SIGUSR1, self._on_save_signal)
+        # Signal handlers for clean shutdown
         signal.signal(signal.SIGINT, self._on_stop_signal)
         signal.signal(signal.SIGTERM, self._on_stop_signal)
 
+        # Start IPC server
+        self._ipc = IPCServer(self)
+        self._ipc.start()
+
+        # Start capture thread
         self._capture_thread = threading.Thread(target=self._capture_loop, daemon=True)
         self._capture_thread.start()
 
         log.info(
             "echobuf daemon running — buffer=%.0fs, rate=%dHz, channels=%d, output=%s",
-            self.ring.capacity / self.fmt.sample_rate,
+            self.config.buffer.seconds,
             self.fmt.sample_rate,
             self.fmt.channels,
             self.output_dir,
         )
-        log.info("Send SIGUSR1 (kill -USR1 %d) or run `echobuf save` to capture", os.getpid())
-
-        # Write PID file so `echobuf save` can find us
-        pid_path = _pid_path()
-        pid_path.parent.mkdir(parents=True, exist_ok=True)
-        pid_path.write_text(str(os.getpid()))
+        log.info("Use `echobuf save` to capture, `echobuf status` to check, `echobuf quit` to stop")
 
         try:
             while self._running:
@@ -92,22 +93,25 @@ class Daemon:
             return None
 
         self._save_counter += 1
-        now = datetime.now()
-        filename = f"{now.strftime('%Y%m%d_%H%M%S')}_{self._save_counter:03d}.wav"
-        if label:
-            filename = f"{now.strftime('%Y%m%d_%H%M%S')}_{label}_{self._save_counter:03d}.wav"
+        duration = audio.shape[0] / self.fmt.sample_rate
 
-        out_path = self.output_dir / now.strftime("%Y-%m-%d") / filename
+        filename = render_template(
+            self.config.output.template,
+            now=datetime.now(),
+            source=self.config.capture.source,
+            duration=duration,
+            counter=self._save_counter,
+            label=label or "",
+            ext=self.config.output.format,
+            sanitize=self.config.output.sanitize,
+        )
+
+        out_path = self.output_dir / filename
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
         sf.write(str(out_path), audio, self.fmt.sample_rate, subtype="PCM_16")
-        duration = audio.shape[0] / self.fmt.sample_rate
         log.info("Saved %.1fs of audio to %s", duration, out_path)
         return out_path
-
-    def _on_save_signal(self, signum: int, frame) -> None:
-        # Run save on a worker thread so we don't block the signal handler
-        threading.Thread(target=self.save, daemon=True).start()
 
     def _on_stop_signal(self, signum: int, frame) -> None:
         log.info("Received signal %d, shutting down", signum)
@@ -115,13 +119,7 @@ class Daemon:
 
     def _shutdown(self) -> None:
         self._running = False
+        if self._ipc is not None:
+            self._ipc.stop()
         self.backend.close()
-        pid_path = _pid_path()
-        if pid_path.exists():
-            pid_path.unlink()
         log.info("Daemon stopped")
-
-
-def _pid_path() -> Path:
-    runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
-    return Path(runtime_dir) / "echobuf.pid"
