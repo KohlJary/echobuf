@@ -115,12 +115,15 @@ class TrayApp:
                 self._show_notification("Could not open folder")
 
     def _on_edit_config(self, icon: pystray.Icon, item: pystray.MenuItem) -> None:
-        from .config import DEFAULT_CONFIG_PATH
+        from .config import DEFAULT_CONFIG_PATH, DEFAULT_CONFIG_TEMPLATE
 
         config_path = DEFAULT_CONFIG_PATH
-        editor = os.environ.get("EDITOR", "xdg-open")
+        if not config_path.exists():
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            config_path.write_text(DEFAULT_CONFIG_TEMPLATE)
+
         try:
-            subprocess.Popen([editor, str(config_path)])
+            subprocess.Popen(["xdg-open", str(config_path)])
         except OSError:
             self._show_notification(f"Could not open {config_path}")
 

@@ -21,6 +21,34 @@ DEFAULT_OUTPUT_DIR = Path.home() / "samples"
 DEFAULT_LOG_FILE = _state_dir() / "echobuf.log"
 DEFAULT_TEMPLATE = "%(date)s/%(time)s_%(counter)03d.%(ext)s"
 
+DEFAULT_CONFIG_TEMPLATE = """\
+[buffer]
+seconds = 10              # rolling buffer length
+post_seconds = 0          # additional seconds captured after save
+
+[capture]
+backend = "auto"          # auto | pipewire | pulse
+source = "system"         # system | app:<name>
+sample_rate = 48000
+channels = 2
+
+[output]
+directory = "~/samples"
+template = "%(date)s/%(time)s_%(counter)03d.%(ext)s"
+format = "wav"
+sanitize = true
+
+[hotkey]
+binding = ""
+
+[notifications]
+enabled = true
+sound = true
+
+[logging]
+level = "info"
+"""
+
 
 @dataclass
 class BufferConfig:
