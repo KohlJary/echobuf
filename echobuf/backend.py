@@ -37,7 +37,7 @@ class PulseBackend:
         self._fmt: AudioFormat | None = None
         self._frame_bytes: int = 0
 
-    def open(self, fmt: AudioFormat) -> None:
+    def open(self, fmt: AudioFormat, device: str = "@DEFAULT_MONITOR@") -> None:
         parec = shutil.which("parec")
         if parec is None:
             raise RuntimeError("parec not found — install pulseaudio-utils or pipewire-pulse")
@@ -51,7 +51,7 @@ class PulseBackend:
             "--format=float32le",
             f"--rate={fmt.sample_rate}",
             f"--channels={fmt.channels}",
-            "--device=@DEFAULT_MONITOR@",
+            f"--device={device}",
             "--raw",
         ]
         log.info("Starting capture: %s", " ".join(cmd))

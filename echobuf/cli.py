@@ -26,8 +26,19 @@ def main() -> None:
     # sources
     sub.add_parser("sources", help="List available capture sources")
 
+    # set-source
+    set_src_p = sub.add_parser("set-source", help="Change active capture source")
+    set_src_p.add_argument("source", help="Source spec: 'system' or 'app:<name>'")
+
+    # pause / resume
+    sub.add_parser("pause", help="Pause capture (keep daemon running)")
+    sub.add_parser("resume", help="Resume capture")
+
     # quit
     sub.add_parser("quit", help="Stop the daemon")
+
+    # tray
+    sub.add_parser("tray", help="Run the system tray icon")
 
     args = parser.parse_args()
 
@@ -40,7 +51,11 @@ def main() -> None:
         "save": _cmd_save,
         "status": _cmd_status,
         "sources": _cmd_sources,
+        "set-source": _cmd_set_source,
+        "pause": _cmd_pause,
+        "resume": _cmd_resume,
         "quit": _cmd_quit,
+        "tray": _cmd_tray,
     }
     commands[args.command](args)
 
@@ -96,7 +111,9 @@ def _cmd_save(args: argparse.Namespace) -> None:
 def _cmd_status(args: argparse.Namespace) -> None:
     resp = _ipc_command({"cmd": "status"})
     if resp.get("ok"):
-        print(f"echobuf daemon is running")
+        state = "paused" if resp.get("paused") else "recording"
+        print(f"echobuf daemon is running ({state})")
+        print(f"  Source: {resp.get('source', 'system')}")
         print(f"  Buffer: {resp['buffered']}s / {resp['buffer_seconds']}s")
         print(f"  Format: {resp['sample_rate']}Hz, {resp['channels']}ch")
         print(f"  Saves this session: {resp['saves']}")
@@ -109,9 +126,45 @@ def _cmd_sources(args: argparse.Namespace) -> None:
     resp = _ipc_command({"cmd": "list_sources"})
     if resp.get("ok"):
         for src in resp["sources"]:
-            print(f"  [{src['type']}] {src['name']}")
+            binary = f" ({src['binary']})" if src.get("binary") else ""
+            print(f"  [{src['type']}] {src['name']}{binary}")
     else:
         print("Failed to list sources", file=sys.stderr)
+        sys.exit(1)
+
+
+def _cmd_set_source(args: argparse.Namespace) -> None:
+    spec = args.source
+    if spec == "system":
+        msg = {"cmd": "set_source", "type": "system"}
+    elif spec.startswith("app:"):
+        msg = {"cmd": "set_source", "type": "app", "name": spec[4:]}
+    else:
+        print(f"Invalid source spec: {spec!r} (use 'system' or 'app:<name>')", file=sys.stderr)
+        sys.exit(1)
+    resp = _ipc_command(msg)
+    if resp.get("ok"):
+        print(f"Source changed to: {resp['source']}")
+    else:
+        print(f"Failed: {resp.get('error', 'unknown')}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _cmd_pause(args: argparse.Namespace) -> None:
+    resp = _ipc_command({"cmd": "pause"})
+    if resp.get("ok"):
+        print("Capture paused")
+    else:
+        print(f"Pause failed: {resp.get('error', 'unknown')}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _cmd_resume(args: argparse.Namespace) -> None:
+    resp = _ipc_command({"cmd": "resume"})
+    if resp.get("ok"):
+        print("Capture resumed")
+    else:
+        print(f"Resume failed: {resp.get('error', 'unknown')}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -122,3 +175,8 @@ def _cmd_quit(args: argparse.Namespace) -> None:
     else:
         print(f"Quit failed: {resp.get('error', 'unknown')}", file=sys.stderr)
         sys.exit(1)
+
+
+def _cmd_tray(args: argparse.Namespace) -> None:
+    from .tray import run_tray
+    run_tray()

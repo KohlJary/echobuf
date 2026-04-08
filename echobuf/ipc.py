@@ -109,19 +109,48 @@ class IPCServer:
             return {
                 "ok": True,
                 "running": True,
+                "paused": self._daemon.paused,
+                "source": self._daemon._active_source,
                 "buffer_seconds": self._daemon.ring.capacity / self._daemon.fmt.sample_rate,
                 "buffered": round(self._daemon.ring.duration, 1),
                 "sample_rate": self._daemon.fmt.sample_rate,
                 "channels": self._daemon.fmt.channels,
                 "saves": self._daemon._save_counter,
+                "output_dir": str(self._daemon.output_dir),
             }
 
         elif cmd == "list_sources":
-            # v0.2: only system source, per-app comes in v0.3
+            from .sources import PerAppCapture
+            pac = PerAppCapture()
+            sources = pac.list_sources()
             return {
                 "ok": True,
-                "sources": [{"type": "system", "name": "System audio (default monitor)"}],
+                "sources": [
+                    {"type": s.type, "name": s.name, "binary": s.app_binary}
+                    for s in sources
+                ],
             }
+
+        elif cmd == "pause":
+            self._daemon.pause()
+            return {"ok": True}
+
+        elif cmd == "resume":
+            self._daemon.resume()
+            return {"ok": True}
+
+        elif cmd == "set_source":
+            source_type = msg.get("type", "system")
+            if source_type == "system":
+                spec = "system"
+            else:
+                name = msg.get("name", "")
+                spec = f"app:{name}"
+            try:
+                self._daemon.set_source(spec)
+                return {"ok": True, "source": spec}
+            except RuntimeError as e:
+                return {"ok": False, "error": str(e)}
 
         elif cmd == "quit":
             log.info("Quit requested via IPC")
